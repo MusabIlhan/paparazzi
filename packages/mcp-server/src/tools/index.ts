@@ -11,6 +11,7 @@ export {
 } from './debugger';
 export {
   handleGetActiveTab,
+  handleListTabs,
   handleGetDOMSnapshot,
   handleGetPerformanceMetrics,
   handleGetStorageData,

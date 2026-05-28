@@ -17,7 +17,6 @@ import type {
 import { captureViewport, captureFullPage, getPageMetrics } from './capture';
 import { isRestrictedUrl, getConsoleLogsForTab } from './utils';
 
-// Re-export for backward compatibility and external use
 export { captureViewport, captureFullPage } from './capture';
 export { isRestrictedUrl } from './restricted-urls';
 export { MAX_IMAGE_DIMENSION } from './constants';
@@ -25,19 +24,17 @@ export { calculateChunkCount } from './stitch';
 
 /**
  * Main screenshot handler that routes to viewport or full-page capture.
+ *
+ * Expects the caller to have resolved the target tab (and attached the debugger).
  */
-export async function takeScreenshot(params: TakeScreenshotParams): Promise<ScreenshotResult> {
+export async function takeScreenshot(
+  tab: chrome.tabs.Tab & { id: number },
+  params: TakeScreenshotParams
+): Promise<ScreenshotResult> {
   const mode = params.mode ?? 'viewport';
   const format = params.format ?? 'png';
   const quality = params.quality;
   const includeConsole = params.includeConsole ?? false;
-
-  // Get active tab
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-  if (!tab?.id) {
-    throw new Error('No active tab found');
-  }
 
   // Check for restricted URLs
   const url = tab.url ?? '';

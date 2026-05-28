@@ -155,10 +155,14 @@ export class ExtensionBridge {
 
   /**
    * Send a request to the extension and wait for response.
+   *
+   * `tabId` is sent at the message level (not nested in params) so the
+   * extension can use it as a routing key independent of tool-specific args.
    */
   async request<T = unknown>(
     action: RequestMessage['action'],
-    params?: Record<string, unknown>
+    params?: Record<string, unknown>,
+    tabId?: number
   ): Promise<T> {
     if (!this.connection || this.connection.readyState !== WebSocket.OPEN) {
       throw new Error(
@@ -185,10 +189,27 @@ export class ExtensionBridge {
         type: 'request',
         action,
         params,
+        ...(tabId !== undefined && { tabId }),
       };
 
       this.connection!.send(JSON.stringify(request));
     });
+  }
+
+  /**
+   * Convenience wrapper for tab-scoped requests.
+   *
+   * Splits a tool's input — `{ tabId, ...rest }` — into the wire-level `tabId`
+   * routing key and the tool-specific params. This keeps callers from
+   * accidentally bundling `tabId` into `params`, where the extension ignores
+   * it.
+   */
+  requestForTab<T = unknown>(
+    action: RequestMessage['action'],
+    input: { tabId?: number } & Record<string, unknown>
+  ): Promise<T> {
+    const { tabId, ...params } = input;
+    return this.request<T>(action, params, tabId);
   }
 
   /**

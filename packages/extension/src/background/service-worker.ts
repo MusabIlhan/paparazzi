@@ -1,8 +1,7 @@
 import { ConnectionManager } from './connection-manager';
 import { takeScreenshot } from './screenshot/index';
 import {
-  attachToTab,
-  isAttached,
+  resolveTabWithDebugger,
   getConsoleLogs,
   getNetworkRequests,
   getExceptions,
@@ -19,6 +18,7 @@ import {
   type GetConsoleLogsParams,
   type ConsoleLogsResult,
   type ActiveTabResult,
+  type ListTabsResult,
   type RefreshPageParams,
   type RefreshPageResult,
 } from '@paparazzi/shared';
@@ -35,34 +35,37 @@ async function handleRequest(request: RequestMessage): Promise<unknown> {
 
   switch (request.action) {
     case 'takeScreenshot':
-      return takeScreenshot(request.params as TakeScreenshotParams);
+      return handleTakeScreenshot(request.params as TakeScreenshotParams, request.tabId);
 
     case 'getConsoleLogs':
-      return handleGetConsoleLogs(request.params as GetConsoleLogsParams);
+      return handleGetConsoleLogs(request.params as GetConsoleLogsParams, request.tabId);
 
     case 'getActiveTab':
       return handleGetActiveTab();
 
+    case 'listTabs':
+      return handleListTabs();
+
     case 'getNetworkRequests':
-      return handleGetNetworkRequests(request.params as { clear?: boolean });
+      return handleGetNetworkRequests(request.params as { clear?: boolean }, request.tabId);
 
     case 'getExceptions':
-      return handleGetExceptions(request.params as { clear?: boolean });
+      return handleGetExceptions(request.params as { clear?: boolean }, request.tabId);
 
     case 'evaluateJS':
-      return handleEvaluateJS(request.params as { expression: string });
+      return handleEvaluateJS(request.params as { expression: string }, request.tabId);
 
     case 'getDOMSnapshot':
-      return handleGetDOMSnapshot(request.params as { selector?: string });
+      return handleGetDOMSnapshot(request.params as { selector?: string }, request.tabId);
 
     case 'getPerformanceMetrics':
-      return handleGetPerformanceMetrics();
+      return handleGetPerformanceMetrics(request.tabId);
 
     case 'getStorageData':
-      return handleGetStorageData();
+      return handleGetStorageData(request.tabId);
 
     case 'refreshPage':
-      return handleRefreshPage(request.params as RefreshPageParams);
+      return handleRefreshPage(request.params as RefreshPageParams, request.tabId);
 
     default:
       throw new Error(`Unknown action: ${request.action}`);
@@ -70,30 +73,24 @@ async function handleRequest(request: RequestMessage): Promise<unknown> {
 }
 
 /**
- * Get active tab and ensure debugger is attached.
+ * Take a screenshot of the target tab.
  */
-async function getActiveTabWithDebugger(): Promise<chrome.tabs.Tab & { id: number }> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-  if (!tab?.id) {
-    throw new Error('No active tab found');
-  }
-
-  if (!isAttached(tab.id)) {
-    console.log('[Paparazzi] Attaching debugger to tab:', tab.id);
-    await attachToTab(tab.id);
-  }
-
-  return tab as chrome.tabs.Tab & { id: number };
+async function handleTakeScreenshot(
+  params: TakeScreenshotParams | undefined,
+  tabId?: number
+) {
+  const tab = await resolveTabWithDebugger(tabId);
+  return takeScreenshot(tab, params ?? {});
 }
 
 /**
- * Get console logs from the active tab using debugger API.
+ * Get console logs from the target tab using debugger API.
  */
 async function handleGetConsoleLogs(
-  params?: GetConsoleLogsParams
+  params?: GetConsoleLogsParams,
+  tabId?: number
 ): Promise<ConsoleLogsResult> {
-  const tab = await getActiveTabWithDebugger();
+  const tab = await resolveTabWithDebugger(tabId);
 
   const logs = getConsoleLogs(tab.id, {
     levels: params?.levels,
@@ -105,84 +102,113 @@ async function handleGetConsoleLogs(
 }
 
 /**
- * Get network requests from the active tab.
+ * Get network requests from the target tab.
  */
-async function handleGetNetworkRequests(params?: { clear?: boolean }) {
-  const tab = await getActiveTabWithDebugger();
+async function handleGetNetworkRequests(
+  params?: { clear?: boolean },
+  tabId?: number
+) {
+  const tab = await resolveTabWithDebugger(tabId);
   const requests = getNetworkRequests(tab.id, { clear: params?.clear });
   console.log('[Paparazzi] Returning', requests.length, 'network requests');
   return { requests };
 }
 
 /**
- * Get JavaScript exceptions from the active tab.
+ * Get JavaScript exceptions from the target tab.
  */
-async function handleGetExceptions(params?: { clear?: boolean }) {
-  const tab = await getActiveTabWithDebugger();
+async function handleGetExceptions(
+  params?: { clear?: boolean },
+  tabId?: number
+) {
+  const tab = await resolveTabWithDebugger(tabId);
   const exceptions = getExceptions(tab.id, { clear: params?.clear });
   console.log('[Paparazzi] Returning', exceptions.length, 'exceptions');
   return { exceptions };
 }
 
 /**
- * Evaluate JavaScript in the active tab.
+ * Evaluate JavaScript in the target tab.
  */
-async function handleEvaluateJS(params: { expression: string }) {
-  const tab = await getActiveTabWithDebugger();
+async function handleEvaluateJS(
+  params: { expression: string },
+  tabId?: number
+) {
+  const tab = await resolveTabWithDebugger(tabId);
   const result = await evaluateJS(tab.id, params.expression);
   console.log('[Paparazzi] Evaluated JS:', result.type);
   return result;
 }
 
 /**
- * Get DOM snapshot from the active tab.
+ * Get DOM snapshot from the target tab.
  */
-async function handleGetDOMSnapshot(params?: { selector?: string }) {
-  const tab = await getActiveTabWithDebugger();
+async function handleGetDOMSnapshot(
+  params?: { selector?: string },
+  tabId?: number
+) {
+  const tab = await resolveTabWithDebugger(tabId);
   const html = await getDOMSnapshot(tab.id, params?.selector);
   console.log('[Paparazzi] Got DOM snapshot, length:', html.length);
   return { html };
 }
 
 /**
- * Get performance metrics from the active tab.
+ * Get performance metrics from the target tab.
  */
-async function handleGetPerformanceMetrics() {
-  const tab = await getActiveTabWithDebugger();
+async function handleGetPerformanceMetrics(tabId?: number) {
+  const tab = await resolveTabWithDebugger(tabId);
   const metrics = await getPerformanceMetrics(tab.id);
   console.log('[Paparazzi] Got performance metrics');
   return metrics;
 }
 
 /**
- * Get storage data from the active tab.
+ * Get storage data from the target tab.
  */
-async function handleGetStorageData() {
-  const tab = await getActiveTabWithDebugger();
+async function handleGetStorageData(tabId?: number) {
+  const tab = await resolveTabWithDebugger(tabId);
   const data = await getStorageData(tab.id);
   console.log('[Paparazzi] Got storage data');
   return data;
 }
 
 /**
- * Refresh the active page and wait for it to load.
+ * Refresh the target page and wait for it to load.
  */
-async function handleRefreshPage(params?: RefreshPageParams): Promise<RefreshPageResult> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+async function handleRefreshPage(
+  params?: RefreshPageParams,
+  tabId?: number
+): Promise<RefreshPageResult> {
+  const tab = await resolveTabWithDebugger(tabId);
 
-  if (!tab?.id) {
-    throw new Error('No active tab found');
-  }
-
-  // Create a promise that waits for the tab to finish loading
-  const waitForLoad = new Promise<void>((resolve) => {
-    const listener = (tabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
-      if (tabId === tab.id && changeInfo.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(listener);
+  // Wait for the reload to finish, the tab to be closed, or a hard timeout.
+  // Without the latter two, `onUpdated` may never fire (closed tab, interrupted
+  // nav) and the listener — plus this promise — would leak forever.
+  const waitForLoad = new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      chrome.tabs.onRemoved.removeListener(onRemoved);
+      clearTimeout(timeoutId);
+    };
+    const onUpdated = (changedId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
+      if (changedId === tab.id && changeInfo.status === 'complete') {
+        cleanup();
         resolve();
       }
     };
-    chrome.tabs.onUpdated.addListener(listener);
+    const onRemoved = (removedId: number) => {
+      if (removedId === tab.id) {
+        cleanup();
+        reject(new Error(`Tab ${tab.id} was closed during reload`));
+      }
+    };
+    const timeoutId = setTimeout(() => {
+      cleanup();
+      reject(new Error(`Tab ${tab.id} did not finish loading within 25s`));
+    }, 25_000);
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    chrome.tabs.onRemoved.addListener(onRemoved);
   });
 
   // Reload the tab
@@ -190,17 +216,16 @@ async function handleRefreshPage(params?: RefreshPageParams): Promise<RefreshPag
     bypassCache: params?.bypassCache ?? false,
   });
 
-  // Wait for the page to finish loading
   await waitForLoad;
 
   // Get updated tab info
-  const [updatedTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const updatedTab = await chrome.tabs.get(tab.id);
 
-  console.log('[Paparazzi] Page refreshed:', updatedTab?.url);
+  console.log('[Paparazzi] Page refreshed:', updatedTab.url);
 
   return {
-    url: updatedTab?.url ?? '',
-    title: updatedTab?.title ?? '',
+    url: updatedTab.url ?? '',
+    title: updatedTab.title ?? '',
     success: true,
   };
 }
@@ -220,6 +245,25 @@ async function handleGetActiveTab(): Promise<ActiveTabResult> {
     url: tab.url ?? '',
     title: tab.title ?? '',
     windowId: tab.windowId,
+  };
+}
+
+/**
+ * List all open tabs across all windows.
+ */
+async function handleListTabs(): Promise<ListTabsResult> {
+  const tabs = await chrome.tabs.query({});
+
+  return {
+    tabs: tabs
+      .filter((tab): tab is chrome.tabs.Tab & { id: number } => tab.id !== undefined)
+      .map((tab) => ({
+        id: tab.id,
+        url: tab.url ?? '',
+        title: tab.title ?? '',
+        windowId: tab.windowId,
+        active: tab.active,
+      })),
   };
 }
 

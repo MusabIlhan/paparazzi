@@ -16,17 +16,22 @@ import type { ToolResponse } from './types';
  */
 export async function handleGetConsoleLogs(
   bridge: ExtensionBridge,
-  params: { clear?: boolean; levels?: ('log' | 'warn' | 'error' | 'info' | 'debug')[] }
+  params: {
+    clear?: boolean;
+    levels?: ('log' | 'warn' | 'error' | 'info' | 'debug')[];
+    tabId?: number;
+  }
 ): Promise<ToolResponse> {
   try {
-    const consoleParams: GetConsoleLogsParams = {
+    const consoleParams: GetConsoleLogsParams & { tabId?: number } = {
       clear: params.clear,
       levels: params.levels,
+      tabId: params.tabId,
     };
 
-    const result = await bridge.request<ConsoleLogsResult>(
+    const result = await bridge.requestForTab<ConsoleLogsResult>(
       'getConsoleLogs',
-      consoleParams as Record<string, unknown>
+      consoleParams as { tabId?: number } & Record<string, unknown>
     );
 
     if (result.logs.length === 0) {
@@ -69,12 +74,13 @@ export async function handleGetConsoleLogs(
  */
 export async function handleGetNetworkRequests(
   bridge: ExtensionBridge,
-  params: { clear?: boolean }
+  params: { clear?: boolean; tabId?: number }
 ): Promise<ToolResponse> {
   try {
-    const result = await bridge.request<{ requests: NetworkRequest[] }>('getNetworkRequests', {
-      clear: params.clear,
-    });
+    const result = await bridge.requestForTab<{ requests: NetworkRequest[] }>(
+      'getNetworkRequests',
+      { clear: params.clear, tabId: params.tabId }
+    );
 
     if (result.requests.length === 0) {
       return {
@@ -117,12 +123,13 @@ export async function handleGetNetworkRequests(
  */
 export async function handleGetExceptions(
   bridge: ExtensionBridge,
-  params: { clear?: boolean }
+  params: { clear?: boolean; tabId?: number }
 ): Promise<ToolResponse> {
   try {
-    const result = await bridge.request<{ exceptions: JSException[] }>('getExceptions', {
-      clear: params.clear,
-    });
+    const result = await bridge.requestForTab<{ exceptions: JSException[] }>(
+      'getExceptions',
+      { clear: params.clear, tabId: params.tabId }
+    );
 
     if (result.exceptions.length === 0) {
       return {
@@ -169,15 +176,15 @@ export async function handleGetExceptions(
  */
 export async function handleEvaluateJS(
   bridge: ExtensionBridge,
-  params: { expression: string }
+  params: { expression: string; tabId?: number }
 ): Promise<ToolResponse> {
   try {
-    const result = await bridge.request<{
+    const result = await bridge.requestForTab<{
       value?: unknown;
       type: string;
       description?: string;
       error?: string;
-    }>('evaluateJS', { expression: params.expression });
+    }>('evaluateJS', { expression: params.expression, tabId: params.tabId });
 
     if (result.error) {
       return {

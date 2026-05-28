@@ -13,19 +13,21 @@ export async function handleTakeScreenshot(
     format?: 'png' | 'jpeg';
     quality?: number;
     includeConsole?: boolean;
+    tabId?: number;
   }
 ): Promise<ToolResponse> {
   try {
-    const screenshotParams: TakeScreenshotParams = {
+    const screenshotParams: TakeScreenshotParams & { tabId?: number } = {
       mode: params.mode,
       format: params.format,
       quality: params.quality,
       includeConsole: params.includeConsole,
+      tabId: params.tabId,
     };
 
-    const result = await bridge.request<ScreenshotResult>(
+    const result = await bridge.requestForTab<ScreenshotResult>(
       'takeScreenshot',
-      screenshotParams as Record<string, unknown>
+      screenshotParams as { tabId?: number } & Record<string, unknown>
     );
 
     const content: ToolResponse['content'] = [];

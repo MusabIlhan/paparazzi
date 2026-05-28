@@ -15,7 +15,7 @@ export type {
 } from './types';
 
 // Re-export public API
-export { attachToTab, detachFromTab, isAttached } from './attach';
+export { attachToTab, detachFromTab, isAttached, resolveTabWithDebugger } from './attach';
 export { getConsoleLogs, handleConsoleEvent } from './console';
 export {
   getNetworkRequests,

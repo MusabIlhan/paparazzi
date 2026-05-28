@@ -4,9 +4,9 @@
 
 import type {
   ActiveTabResult,
+  ListTabsResult,
   PerformanceMetrics,
   StorageData,
-  RefreshPageParams,
   RefreshPageResult,
 } from '@paparazzi/shared';
 import type { ExtensionBridge } from '../extension-bridge/websocket-server';
@@ -38,16 +38,60 @@ export async function handleGetActiveTab(bridge: ExtensionBridge): Promise<ToolR
 }
 
 /**
+ * List all open tabs across all windows.
+ */
+export async function handleListTabs(bridge: ExtensionBridge): Promise<ToolResponse> {
+  try {
+    const result = await bridge.request<ListTabsResult>('listTabs');
+
+    if (result.tabs.length === 0) {
+      return {
+        content: [{ type: 'text', text: 'No tabs found.' }],
+        isError: false,
+      };
+    }
+
+    const MAX_TABS_SHOWN = 25;
+    const visible = result.tabs.slice(0, MAX_TABS_SHOWN);
+    const lines = visible.map((tab) => {
+      const marker = tab.active ? '* ' : '  ';
+      return `${marker}[${tab.id}] (window ${tab.windowId}) ${tab.title} — ${tab.url}`;
+    });
+    const overflow = result.tabs.length - visible.length;
+    if (overflow > 0) {
+      lines.push(`  ... and ${overflow} more`);
+    }
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: `Open Tabs (${result.tabs.length}, * = active in its window):\n${lines.join('\n')}`,
+        },
+      ],
+      isError: false,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return {
+      content: [{ type: 'text', text: `Failed to list tabs: ${message}` }],
+      isError: true,
+    };
+  }
+}
+
+/**
  * Get DOM snapshot handler.
  */
 export async function handleGetDOMSnapshot(
   bridge: ExtensionBridge,
-  params: { selector?: string }
+  params: { selector?: string; tabId?: number }
 ): Promise<ToolResponse> {
   try {
-    const result = await bridge.request<{ html: string }>('getDOMSnapshot', {
-      selector: params.selector,
-    });
+    const result = await bridge.requestForTab<{ html: string }>(
+      'getDOMSnapshot',
+      { selector: params.selector, tabId: params.tabId }
+    );
 
     // Truncate very long HTML
     const maxLength = 50000;
@@ -81,9 +125,15 @@ export async function handleGetDOMSnapshot(
 /**
  * Get performance metrics handler.
  */
-export async function handleGetPerformanceMetrics(bridge: ExtensionBridge): Promise<ToolResponse> {
+export async function handleGetPerformanceMetrics(
+  bridge: ExtensionBridge,
+  params: { tabId?: number } = {}
+): Promise<ToolResponse> {
   try {
-    const metrics = await bridge.request<PerformanceMetrics>('getPerformanceMetrics');
+    const metrics = await bridge.requestForTab<PerformanceMetrics>(
+      'getPerformanceMetrics',
+      { tabId: params.tabId }
+    );
 
     const lines: string[] = ['Performance Metrics:', ''];
 
@@ -132,9 +182,15 @@ export async function handleGetPerformanceMetrics(bridge: ExtensionBridge): Prom
 /**
  * Get storage data handler.
  */
-export async function handleGetStorageData(bridge: ExtensionBridge): Promise<ToolResponse> {
+export async function handleGetStorageData(
+  bridge: ExtensionBridge,
+  params: { tabId?: number } = {}
+): Promise<ToolResponse> {
   try {
-    const data = await bridge.request<StorageData>('getStorageData');
+    const data = await bridge.requestForTab<StorageData>(
+      'getStorageData',
+      { tabId: params.tabId }
+    );
 
     const lines: string[] = ['Storage Data:', ''];
 
@@ -207,23 +263,19 @@ export async function handleGetStorageData(bridge: ExtensionBridge): Promise<Too
  */
 export async function handleRefreshPage(
   bridge: ExtensionBridge,
-  params: { bypassCache?: boolean }
+  params: { bypassCache?: boolean; tabId?: number }
 ): Promise<ToolResponse> {
   try {
-    const refreshParams: RefreshPageParams = {
-      bypassCache: params.bypassCache,
-    };
-
-    const result = await bridge.request<RefreshPageResult>(
+    const result = await bridge.requestForTab<RefreshPageResult>(
       'refreshPage',
-      refreshParams as Record<string, unknown>
+      { bypassCache: params.bypassCache, tabId: params.tabId }
     );
 
     return {
       content: [
         {
           type: 'text',
-          text: `Page refreshed successfully!\n  URL: ${result.url}\n  Title: ${result.title}\n  Cache bypassed: ${params.bypassCache}`,
+          text: `Page refreshed successfully!\n  URL: ${result.url}\n  Title: ${result.title}\n  Cache bypassed: ${params.bypassCache ?? false}`,
         },
       ],
       isError: false,

@@ -21,7 +21,14 @@ Paparazzi takes a simpler approach: it connects to your existing browser session
 | `get_performance_metrics` | Web Vitals, memory, DOM stats |
 | `get_storage_data` | Cookies, localStorage, sessionStorage |
 | `get_active_tab` | Current tab URL/title |
+| `list_tabs` | List every open tab (any window) with its id |
 | `refresh_page` | Reload (supports hard refresh) |
+
+### Multi-tab access
+
+All inspection tools (everything except `get_active_tab` / `list_tabs`) take an optional `tabId` argument. Omit it to act on the active tab; pass an id from `list_tabs` to target any other tab, in any window, without changing what the user is looking at. Screenshots use the Chrome DevTools Protocol, so they capture the target tab without bringing it to the foreground.
+
+> **Scope note.** Once Paparazzi is connected, the assistant can list every open tab in your normal-mode Chrome profile (incognito tabs are excluded by Chrome) and call `evaluate_js`, `get_dom_snapshot`, `get_storage_data`, etc. against any of them — including tabs you're not actively asking about. That includes reading HttpOnly cookies and running arbitrary JavaScript on those pages. If you have banking, internal tooling, or other sensitive tabs open in a separate window, close them or quit the extension before starting a session with an untrusted prompt.
 
 ## Quick Start
 

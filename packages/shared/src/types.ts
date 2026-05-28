@@ -20,6 +20,7 @@ export interface RequestMessage {
     | 'takeScreenshot'
     | 'getConsoleLogs'
     | 'getActiveTab'
+    | 'listTabs'
     | 'getNetworkRequests'
     | 'getExceptions'
     | 'evaluateJS'
@@ -28,6 +29,8 @@ export interface RequestMessage {
     | 'getStorageData'
     | 'refreshPage';
   params?: Record<string, unknown>;
+  /** Optional target tab id; falls back to the active tab when omitted */
+  tabId?: number;
 }
 
 /** Response from extension to MCP server */
@@ -143,6 +146,22 @@ export interface ActiveTabResult {
   url: string;
   title: string;
   windowId: number;
+}
+
+// ============================================
+// List Tabs Types
+// ============================================
+
+export interface TabInfo {
+  id: number;
+  url: string;
+  title: string;
+  windowId: number;
+  active: boolean;
+}
+
+export interface ListTabsResult {
+  tabs: TabInfo[];
 }
 
 // ============================================

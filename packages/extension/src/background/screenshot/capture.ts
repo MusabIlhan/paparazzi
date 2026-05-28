@@ -1,10 +1,13 @@
 /**
  * Screenshot capture functions.
  * Handles viewport and full-page capture coordination.
+ *
+ * Uses the Chrome DevTools Protocol (Page.captureScreenshot) so non-active
+ * tabs can be captured without stealing focus from the user.
  */
 
 import type { ScreenshotChunk } from '@paparazzi/shared';
-import { MAX_IMAGE_DIMENSION, MIN_CAPTURE_INTERVAL } from './constants';
+import { MAX_IMAGE_DIMENSION } from './constants';
 import {
   getPageMetrics,
   scrollTo,
@@ -27,29 +30,52 @@ export interface FullPageCaptureResult {
 }
 
 /**
+ * Invoke CDP Page.captureScreenshot on an attached tab.
+ * Returns the raw base64 payload (no data: prefix).
+ */
+async function cdpCapture(
+  tabId: number,
+  options: CaptureOptions
+): Promise<string> {
+  const params: { format: 'png' | 'jpeg'; quality?: number } = {
+    format: options.format,
+  };
+  if (options.format === 'jpeg') {
+    params.quality = options.quality ?? 80;
+  }
+
+  const result = (await chrome.debugger.sendCommand(
+    { tabId },
+    'Page.captureScreenshot',
+    params
+  )) as { data: string } | undefined;
+
+  if (!result?.data) {
+    throw new Error('Page.captureScreenshot returned no data');
+  }
+  return result.data;
+}
+
+/**
  * Capture a screenshot of the visible viewport.
  */
 export async function captureViewport(
   tabId: number,
   options: CaptureOptions
 ): Promise<string> {
-  const captureOptions: chrome.tabs.CaptureVisibleTabOptions = {
-    format: options.format,
-    quality: options.format === 'jpeg' ? (options.quality ?? 80) : undefined,
-  };
-
-  // captureVisibleTab returns a data URL like "data:image/png;base64,..."
-  const dataUrl = await chrome.tabs.captureVisibleTab(captureOptions);
-
-  // Extract just the base64 part
-  const base64Data = dataUrl.split(',')[1];
-  return base64Data;
+  return cdpCapture(tabId, options);
 }
 
 /**
  * Capture a full-page screenshot by scrolling and stitching.
  * Returns chunks if the page exceeds MAX_IMAGE_DIMENSION to stay within Claude API limits.
  * Handles lazy-loaded images and fixed/sticky elements.
+ *
+ * Caveat for background tabs: Chrome throttles requestAnimationFrame and other
+ * rendering in inactive tabs, so the fixed SCROLL_SETTLE_DELAY between scroll
+ * and capture is best-effort, not a paint guarantee. Captures of a tab the
+ * user is not focused on may briefly include stale content; if pixel accuracy
+ * matters, focus the tab first.
  */
 export async function captureFullPage(
   tabId: number,
@@ -71,12 +97,12 @@ export async function captureFullPage(
   // Hide fixed/sticky elements to prevent them from repeating in every segment
   await hideFixedElements(tabId);
 
+  const mimeType = options.format === 'jpeg' ? 'image/jpeg' : 'image/png';
   const screenshots: string[] = [];
 
   try {
     // Scroll and capture each viewport
     let scrollY = 0;
-    let lastCaptureTime = 0;
 
     while (scrollY < scrollHeight) {
       await scrollTo(tabId, scrollY);
@@ -84,22 +110,9 @@ export async function captureFullPage(
       // Wait for lazy-loaded images in viewport to load
       await waitForImages(tabId);
 
-      // Throttle captures to avoid Chrome's rate limit (MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND)
-      const now = Date.now();
-      const timeSinceLastCapture = now - lastCaptureTime;
-      if (timeSinceLastCapture < MIN_CAPTURE_INTERVAL) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, MIN_CAPTURE_INTERVAL - timeSinceLastCapture)
-        );
-      }
-
-      const dataUrl = await chrome.tabs.captureVisibleTab({
-        format: options.format,
-        quality: options.format === 'jpeg' ? (options.quality ?? 80) : undefined,
-      });
-      lastCaptureTime = Date.now();
-
-      screenshots.push(dataUrl);
+      const base64 = await cdpCapture(tabId, options);
+      // Stitch functions expect data URLs (they fetch them as blobs)
+      screenshots.push(`data:${mimeType};base64,${base64}`);
       scrollY += viewportHeight;
     }
   } finally {

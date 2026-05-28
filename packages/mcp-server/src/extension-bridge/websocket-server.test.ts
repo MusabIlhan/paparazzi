@@ -120,6 +120,59 @@ describe('ExtensionBridge', () => {
 
       client.close();
     });
+
+    it('should include tabId at the message level when provided', async () => {
+      const client = new WebSocket(`ws://localhost:${bridge.getPort()}`);
+
+      await new Promise<void>((resolve) => {
+        client.on('open', resolve);
+      });
+
+      const sentRequests: Array<Record<string, unknown>> = [];
+      client.on('message', (data) => {
+        const request = JSON.parse(data.toString());
+        sentRequests.push(request);
+        client.send(
+          JSON.stringify({ id: request.id, type: 'response', success: true, data: {} })
+        );
+      });
+
+      await bridge.request('getConsoleLogs', { clear: false }, 42);
+      await bridge.request('getActiveTab');
+
+      expect(sentRequests[0].tabId).toBe(42);
+      expect(sentRequests[0].params).toEqual({ clear: false });
+      expect(sentRequests[1]).not.toHaveProperty('tabId');
+
+      client.close();
+    });
+
+    it('requestForTab splits tabId out of params', async () => {
+      const client = new WebSocket(`ws://localhost:${bridge.getPort()}`);
+
+      await new Promise<void>((resolve) => {
+        client.on('open', resolve);
+      });
+
+      const sentRequests: Array<Record<string, unknown>> = [];
+      client.on('message', (data) => {
+        const request = JSON.parse(data.toString());
+        sentRequests.push(request);
+        client.send(
+          JSON.stringify({ id: request.id, type: 'response', success: true, data: {} })
+        );
+      });
+
+      await bridge.requestForTab('getDOMSnapshot', { selector: '#main', tabId: 7 });
+      await bridge.requestForTab('getPerformanceMetrics', { tabId: undefined });
+
+      expect(sentRequests[0].tabId).toBe(7);
+      expect(sentRequests[0].params).toEqual({ selector: '#main' });
+      expect(sentRequests[1]).not.toHaveProperty('tabId');
+      expect(sentRequests[1].params).toEqual({});
+
+      client.close();
+    });
   });
 
   describe('port discovery', () => {
