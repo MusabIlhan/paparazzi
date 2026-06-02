@@ -101,6 +101,19 @@ describe('resolveTabWithDebugger', () => {
     await expect(resolveTabWithDebugger(77)).rejects.toThrow(/Tab 77 has no id/);
   });
 
+  it('refuses to attach to restricted URLs with a helpful message', async () => {
+    chromeMock.tabs.get.mockResolvedValue({
+      id: 55,
+      url: 'chrome-extension://abcd/options.html',
+      title: 'Options',
+    });
+
+    await expect(resolveTabWithDebugger(55)).rejects.toThrow(
+      /Cannot inspect chrome-extension:\/\/ pages/
+    );
+    expect(chromeMock.debugger.attach).not.toHaveBeenCalled();
+  });
+
   it('dedupes concurrent attaches for the same tab', async () => {
     let resolveAttach: () => void = () => undefined;
     const attachStarted = new Promise<void>((resolve) => {

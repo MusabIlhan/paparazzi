@@ -2,6 +2,7 @@
  * Debugger attachment management.
  */
 
+import { isRestrictedUrl } from '../screenshot/restricted-urls';
 import { attachedTabs, getOrCreateTabState, clearTabState } from './state';
 
 // Dedupe concurrent attaches: if two requests race against an unattached tab,
@@ -102,6 +103,18 @@ export async function resolveTabWithDebugger(
       tabId !== undefined
         ? `Tab ${tabId} has no id`
         : 'No active tab found'
+    );
+  }
+
+  // Chrome blocks chrome.debugger.attach on chrome://, chrome-extension://, and
+  // other privileged URLs — and the error it raises ("Cannot access a
+  // chrome-extension:// URL of different extension") leaks an implementation
+  // detail. Fail fast with a message that tells the caller what to do instead.
+  const url = tab.url ?? '';
+  if (isRestrictedUrl(url)) {
+    const scheme = url.split(':')[0] || 'this';
+    throw new Error(
+      `Cannot inspect ${scheme}:// pages (tab ${tab.id}). Chrome blocks debugger attach to browser-internal and other-extension URLs. Pick a normal http(s):// tab.`
     );
   }
 
