@@ -89,6 +89,28 @@ describe('resolveTabWithDebugger', () => {
     chromeMock.tabs.query.mockResolvedValue([]);
 
     await expect(resolveTabWithDebugger()).rejects.toThrow('No active tab');
+    // We try currentWindow, then lastFocusedWindow, then any window.
+    expect(chromeMock.tabs.query).toHaveBeenCalledTimes(3);
+  });
+
+  it('widens the active-tab query when Chrome has no focused window', async () => {
+    chromeMock.tabs.query
+      .mockResolvedValueOnce([]) // currentWindow: nothing in foreground
+      .mockResolvedValueOnce([]) // lastFocusedWindow: still nothing
+      .mockResolvedValueOnce([{ id: 21, url: 'https://e.example', title: 'E' }]);
+
+    const tab = await resolveTabWithDebugger();
+
+    expect(tab.id).toBe(21);
+    expect(chromeMock.tabs.query).toHaveBeenNthCalledWith(1, {
+      active: true,
+      currentWindow: true,
+    });
+    expect(chromeMock.tabs.query).toHaveBeenNthCalledWith(2, {
+      active: true,
+      lastFocusedWindow: true,
+    });
+    expect(chromeMock.tabs.query).toHaveBeenNthCalledWith(3, { active: true });
   });
 
   it('throws when the resolved tab has no id', async () => {

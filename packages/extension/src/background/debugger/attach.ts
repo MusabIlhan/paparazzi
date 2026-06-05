@@ -95,14 +95,23 @@ export async function resolveTabWithDebugger(
       );
     }
   } else {
-    [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    // currentWindow returns nothing when Chrome has no OS focus (e.g. the user
+    // is in Claude Desktop). Widen the search before giving up.
+    for (const q of [
+      { active: true, currentWindow: true },
+      { active: true, lastFocusedWindow: true },
+      { active: true },
+    ]) {
+      [tab] = await chrome.tabs.query(q);
+      if (tab?.id) break;
+    }
   }
 
   if (!tab?.id) {
     throw new Error(
       tabId !== undefined
         ? `Tab ${tabId} has no id`
-        : 'No active tab found'
+        : 'No active tab found in any Chrome window. Open a tab and try again.'
     );
   }
 

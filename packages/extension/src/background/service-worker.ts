@@ -232,20 +232,33 @@ async function handleRefreshPage(
 
 /**
  * Get information about the active tab.
+ *
+ * Falls back through three progressively wider queries because
+ * `currentWindow: true` returns nothing when no Chrome window has OS focus —
+ * common when the user is talking to Claude in a different app.
  */
 async function handleGetActiveTab(): Promise<ActiveTabResult> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const queries: chrome.tabs.QueryInfo[] = [
+    { active: true, currentWindow: true },
+    { active: true, lastFocusedWindow: true },
+    { active: true },
+  ];
 
-  if (!tab?.id) {
-    throw new Error('No active tab found');
+  for (const q of queries) {
+    const [tab] = await chrome.tabs.query(q);
+    if (tab?.id) {
+      return {
+        id: tab.id,
+        url: tab.url ?? '',
+        title: tab.title ?? '',
+        windowId: tab.windowId,
+      };
+    }
   }
 
-  return {
-    id: tab.id,
-    url: tab.url ?? '',
-    title: tab.title ?? '',
-    windowId: tab.windowId,
-  };
+  throw new Error(
+    'No active tab found in any Chrome window. Open a tab and try again.'
+  );
 }
 
 /**
